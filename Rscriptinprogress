@@ -30,6 +30,13 @@ FAOSTAT_data_2022_clean <- FAOSTAT_data_2022 %>%
     values_fill = 0                 
   ) 
 
+# Separating import and export data
+
+FAOSTAT_data_2022_clean <- FAOSTAT_data_2022_clean %>%
+  mutate(IDR = `Import quantity` / (Production + `Import quantity` - `Export quantity`)) %>% mutate(Domestic_food = (1-`IDR`)* `Food supply quantity (kg/capita/yr)` ) %>% 
+  mutate(imported_food=`IDR`*`Food supply quantity (kg/capita/yr)`)
+
+
 # 3. Match FAOSTAT and RTE food items, so that each FAOSTAT item has a corresponding RTE
 # Upload matching criteria and clean so that is correctly matches
 FAO_RTE_matching<- read_excel("FAO_RTE_matching.xlsx")
@@ -90,11 +97,14 @@ Japan_percentage_locations <- Japan_total_weights_imported  %>%
   mutate(Percentage = (Total_Weight / sum(Total_Weight)) * 100) %>%
   ungroup()
 
-# Match FAOstat 'Import quantity' dataframe with percentage locations
-# Separate FAO stat data to import quantity and domestic quantity sheets
 
-FAO_imports_2022 <- FAOSTAT_data_2022_clean %>% select(Item, Area, RTE_name, `Import quantity`)
-FAO_domestic_2022<- FAOSTAT_data_2022_clean %>% select(Item, Area, RTE_name, `Domestic supply quantity`)
+# Match FAOstat 'Imported food' dataframe with percentage locations
+# Separate FAO stat data to imported and domestic quantity sheets
+
+FAO_imports_2022 <- FAOSTAT_data_2022_clean %>% select(Item, Area, RTE_name, `imported_food`)
+FAO_domestic_2022<- FAOSTAT_data_2022_clean %>% select(Item, Area, RTE_name, `Domestic_food`)
+
+
 
 # For domestic supply quantity, add location = brazil and location=Japan. Now suitable for matching with BIOVALENT.
 FAO_domestic_2022 <- FAO_domestic_2022 %>% mutate(Exporter = Area)
@@ -102,10 +112,11 @@ FAO_domestic_brazil <- FAO_domestic_2022 %>% filter(Exporter=="Brazil")
 FAO_domestic_japan <- FAO_domestic_2022 %>% filter(Exporter=="Japan")
 
 # For import, need to combine with the RTE food data.
-# separate FAO data by country for ease here?
+# separate FAO data by country for ease here
 
 FAO_imports_brazil <- FAO_imports_2022 %>% filter(Area=="Brazil")
 FAO_imports_japan <- FAO_imports_2022 %>% filter(Area=="Japan")
+
 
 # now combine
 imports_brazil <- FAO_imports_brazil %>%
@@ -124,9 +135,11 @@ imports_japan <- FAO_imports_japan %>%
 
 # and now calculate total amounts for each location and food item based on percentages
 imports_brazil <- imports_brazil %>%
-  mutate(totalweight_perlocation = `Import quantity` * Percentage)
+  mutate(totalweight_perlocation = `imported_food` * Percentage*0.01)
 imports_japan <- imports_japan%>%
-  mutate(totalweight_perlocation = `Import quantity` * Percentage)
+  mutate(totalweight_perlocation = `imported_food` * Percentage*0.01)
+# ----- up to here is fine
+
 
 # recombine with FAO domestic data
 
@@ -137,7 +150,7 @@ domestic_clean_brazil <- FAO_domestic_brazil %>%
     Area,
     RTE_name,
     Exporter,
-    Supply = `Domestic supply quantity`,
+    Supply = `Domestic_food`,
     imported_or_domestic = "Domestic"
   )
 
@@ -163,7 +176,7 @@ domestic_clean_japan <- FAO_domestic_japan %>%
     Area,
     RTE_name,
     Exporter,
-    Supply = `Domestic supply quantity`,
+    Supply = `Domestic_food`,
     imported_or_domestic = "Domestic"
   )
 
@@ -179,7 +192,6 @@ imports_clean_japan <- imports_japan %>%
   )
 
 finaltable_japan <- bind_rows(domestic_clean_japan, imports_clean_japan)
-
 
 
 # Data should now include total quantity of product (FAOSTAT), how much from domestic vs imported
@@ -229,24 +241,8 @@ BIOVALENT <- read_excel("BIOVALENT.xlsx")
 BIOVALENT <- BIOVALENT %>%
   mutate(factor_name = clean_text(as.character(factor_name))) %>%   mutate(food_location = clean_text(as.character(food_location)))
 
-biovalent_table_japan <- finaltable_japan %>%   left_join(BIOVALENT, by = c("BIOVALENT_product_name" = "factor_name", "BIOVALENT_location_name"="food_location"))
-biovalent_table_brazil <- finaltable_brazil %>%   left_join(BIOVALENT, by = c("BIOVALENT_product_name" = "factor_name", "BIOVALENT_location_name"="food_location"))
+biovalent_table_japan <- finaltable_japan %>%   left_join(BIOVALENT, by = c("BIOVALENT_product_name" = "factor_name", "BIOVALENT_location_name"="food_location")) %>% mutate(totalimpact=Supply*impact_factor)
+biovalent_table_brazil <- finaltable_brazil %>%   left_join(BIOVALENT, by = c("BIOVALENT_product_name" = "factor_name", "BIOVALENT_location_name"="food_location"))%>% mutate(totalimpact=Supply*impact_factor)
 
-
-# These are the final table summaries for analysis
-biovalent_table_japan_summary <- biovalent_table_japan %>% group_by(Item) %>% mutate(totalimpact=(Supply*impact_factor)) %>% select(Item, Area, Exporter, Supply, imported_or_domestic, totalimpact, impact_factor)
-biovalent_table_brazil_summary <- biovalent_table_brazil %>% group_by(Item) %>% mutate(totalimpact=(Supply*impact_factor)) %>% select(Item, Area, Exporter, Supply, imported_or_domestic, totalimpact, impact_factor)
-
-
-# now finally trying to summarise them 
-biovalent_table_japan_summary_peritem <- biovalent_table_japan_summary %>%
-  group_by(Item) %>%
-  summarise(totalimpact = sum(totalimpact, na.rm = TRUE), totalconsumption=sum(Supply, na.rm=TRUE), impactintensity=mean(impact_factor , na.rm=TRUE))
-
-# can't actually use this mean value as doesnt include weightings.
-
-biovalent_table_brazil_summary_peritem <- biovalent_table_brazil_summary %>%
-  group_by(Item) %>%
-  summarise(totalimpact = sum(totalimpact, na.rm = TRUE), totalconsumption=sum(Supply, na.rm=TRUE),  impactintensity=mean(impact_factor ,na.rm=TRUE))#
-
-# current issue is the FAOstat data seems wronf, so im using the one provided by HotOrCool for now
+biovalent_japan_summary <- biovalent_table_japan %>% group_by(Item) %>% summarise(totalimpact=sum(totalimpact,na.rm=TRUE), totalconsumption=sum(`Supply`, na.rm=TRUE))
+biovalent_brazil_summary <- biovalent_table_brazil %>% group_by(Item) %>% summarise(totalimpact=sum(totalimpact,na.rm=TRUE), totalconsumption=sum(`Supply`, na.rm=TRUE))
