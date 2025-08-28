@@ -1,2 +1,2 @@
-Calculating Brazil and Japan foodprint using a combination of FAO stat consumption data (provided by Hot or Cool), Resource Trade Earth data, and BIOVALENT footprint values.
-Reference year: 2022. 
+Calculating country and location-specific biodiversity footprints for food using a combination of FAO stat consumption data (provided by Hot or Cool), Resource Trade Earth data, and BIOVALENT footprint values.
+Example is using reference year 2022 and data from Brazil. R code explains how to calculate 'foodprints' for any country, all that needs to be changed is the FAOSTAT and Resource Trade Earth source files (instructions provided). 
